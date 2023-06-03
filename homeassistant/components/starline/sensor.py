@@ -8,13 +8,16 @@ from homeassistant.components.sensor import (
     SensorEntity,
     SensorEntityDescription,
 )
+from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import (
-    ELECTRIC_POTENTIAL_VOLT,
-    LENGTH_KILOMETERS,
     PERCENTAGE,
-    TEMP_CELSIUS,
-    VOLUME_LITERS,
+    UnitOfElectricPotential,
+    UnitOfLength,
+    UnitOfTemperature,
+    UnitOfVolume,
 )
+from homeassistant.core import HomeAssistant
+from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.icon import icon_for_battery_level, icon_for_signal_level
 
 from .account import StarlineAccount, StarlineDevice
@@ -40,7 +43,8 @@ SENSOR_TYPES: tuple[StarlineSensorEntityDescription, ...] = (
     StarlineSensorEntityDescription(
         key="battery",
         name_="Battery",
-        native_unit_of_measurement=ELECTRIC_POTENTIAL_VOLT,
+        device_class=SensorDeviceClass.VOLTAGE,
+        native_unit_of_measurement=UnitOfElectricPotential.VOLT,
     ),
     StarlineSensorEntityDescription(
         key="balance",
@@ -51,13 +55,13 @@ SENSOR_TYPES: tuple[StarlineSensorEntityDescription, ...] = (
         key="ctemp",
         name_="Interior Temperature",
         device_class=SensorDeviceClass.TEMPERATURE,
-        native_unit_of_measurement=TEMP_CELSIUS,
+        native_unit_of_measurement=UnitOfTemperature.CELSIUS,
     ),
     StarlineSensorEntityDescription(
         key="etemp",
         name_="Engine Temperature",
         device_class=SensorDeviceClass.TEMPERATURE,
-        native_unit_of_measurement=TEMP_CELSIUS,
+        native_unit_of_measurement=UnitOfTemperature.CELSIUS,
     ),
     StarlineSensorEntityDescription(
         key="gsm_lvl",
@@ -77,13 +81,16 @@ SENSOR_TYPES: tuple[StarlineSensorEntityDescription, ...] = (
     StarlineSensorEntityDescription(
         key="mileage",
         name_="Mileage",
-        native_unit_of_measurement=LENGTH_KILOMETERS,
+        native_unit_of_measurement=UnitOfLength.KILOMETERS,
+        device_class=SensorDeviceClass.DISTANCE,
         icon="mdi:counter",
     ),
 )
 
 
-async def async_setup_entry(hass, entry, async_add_entities):
+async def async_setup_entry(
+    hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback
+) -> None:
     """Set up the StarLine sensors."""
     account: StarlineAccount = hass.data[DOMAIN][entry.entry_id]
     entities = [
@@ -154,7 +161,7 @@ class StarlineSensor(StarlineEntity, SensorEntity):
             if type_value == "percents":
                 return PERCENTAGE
             if type_value == "litres":
-                return VOLUME_LITERS
+                return UnitOfVolume.LITERS
         return self.entity_description.native_unit_of_measurement
 
     @property

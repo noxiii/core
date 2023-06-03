@@ -7,10 +7,11 @@ import os
 from pathlib import Path
 from typing import NamedTuple
 
+from typing_extensions import Self
 import voluptuous as vol
 
 from homeassistant import loader
-from homeassistant.config import (
+from homeassistant.config import (  # type: ignore[attr-defined]
     CONF_CORE,
     CONF_PACKAGES,
     CORE_CONFIG_SCHEMA,
@@ -54,7 +55,7 @@ class HomeAssistantConfig(OrderedDict):
         message: str,
         domain: str | None = None,
         config: ConfigType | None = None,
-    ) -> HomeAssistantConfig:
+    ) -> Self:
         """Add a single error."""
         self.errors.append(CheckConfigError(str(message), domain, config))
         return self
@@ -122,7 +123,7 @@ async def async_check_ha_config_file(  # noqa: C901
     core_config.pop(CONF_PACKAGES, None)
 
     # Filter out repeating config sections
-    components = {key.split(" ")[0] for key in config.keys()}
+    components = {key.partition(" ")[0] for key in config}
 
     # Process and validate config
     for domain in components:
@@ -159,9 +160,7 @@ async def async_check_ha_config_file(  # noqa: C901
         ):
             try:
                 result[domain] = (
-                    await config_validator.async_validate_config(  # type: ignore
-                        hass, config
-                    )
+                    await config_validator.async_validate_config(hass, config)
                 )[domain]
                 continue
             except (vol.Invalid, HomeAssistantError) as ex:

@@ -3,11 +3,10 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from datetime import timedelta
-from typing import TYPE_CHECKING, Any, Dict, TypeVar
+from typing import TYPE_CHECKING, Any, TypeVar
 
 from pyfronius import BadStatusError, FroniusError
 
-from homeassistant.components.sensor import SensorEntityDescription
 from homeassistant.core import callback
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
@@ -25,23 +24,24 @@ from .sensor import (
     OHMPILOT_ENTITY_DESCRIPTIONS,
     POWER_FLOW_ENTITY_DESCRIPTIONS,
     STORAGE_ENTITY_DESCRIPTIONS,
+    FroniusSensorEntityDescription,
 )
 
 if TYPE_CHECKING:
     from . import FroniusSolarNet
     from .sensor import _FroniusSensorEntity
 
-    FroniusEntityType = TypeVar("FroniusEntityType", bound=_FroniusSensorEntity)
+    _FroniusEntityT = TypeVar("_FroniusEntityT", bound=_FroniusSensorEntity)
 
 
 class FroniusCoordinatorBase(
-    ABC, DataUpdateCoordinator[Dict[SolarNetId, Dict[str, Any]]]
+    ABC, DataUpdateCoordinator[dict[SolarNetId, dict[str, Any]]]
 ):
     """Query Fronius endpoint and keep track of seen conditions."""
 
     default_interval: timedelta
     error_interval: timedelta
-    valid_descriptions: list[SensorEntityDescription]
+    valid_descriptions: list[FroniusSensorEntityDescription]
 
     MAX_FAILED_UPDATES = 3
 
@@ -84,10 +84,9 @@ class FroniusCoordinatorBase(
     def add_entities_for_seen_keys(
         self,
         async_add_entities: AddEntitiesCallback,
-        entity_constructor: type[FroniusEntityType],
+        entity_constructor: type[_FroniusEntityT],
     ) -> None:
-        """
-        Add entities for received keys and registers listener for future seen keys.
+        """Add entities for received keys and registers listener for future seen keys.
 
         Called from a platforms `async_setup_entry`.
         """
@@ -104,8 +103,7 @@ class FroniusCoordinatorBase(
                         continue
                     new_entities.append(entity_constructor(self, key, solar_net_id))
                     self.unregistered_keys[solar_net_id].remove(key)
-            if new_entities:
-                async_add_entities(new_entities)
+            async_add_entities(new_entities)
 
         _add_entities_for_unregistered_keys()
         self.solar_net.cleanup_callbacks.append(

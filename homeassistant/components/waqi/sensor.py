@@ -1,4 +1,6 @@
 """Support for the World Air Quality Index service."""
+from __future__ import annotations
+
 import asyncio
 from datetime import timedelta
 import logging
@@ -18,10 +20,12 @@ from homeassistant.const import (
     ATTR_TIME,
     CONF_TOKEN,
 )
+from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import PlatformNotReady
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 import homeassistant.helpers.config_validation as cv
-from homeassistant.helpers.config_validation import PLATFORM_SCHEMA
+from homeassistant.helpers.entity_platform import AddEntitiesCallback
+from homeassistant.helpers.typing import ConfigType, DiscoveryInfoType
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -48,7 +52,6 @@ KEY_TO_ATTR = {
 ATTRIBUTION = "Data provided by the World Air Quality Index project"
 
 ATTR_ICON = "mdi:cloud"
-ATTR_UNIT = "AQI"
 
 CONF_LOCATIONS = "locations"
 CONF_STATIONS = "stations"
@@ -57,7 +60,7 @@ SCAN_INTERVAL = timedelta(minutes=5)
 
 TIMEOUT = 10
 
-PLATFORM_SCHEMA = PLATFORM_SCHEMA.extend(
+PLATFORM_SCHEMA = cv.PLATFORM_SCHEMA.extend(
     {
         vol.Optional(CONF_STATIONS): cv.ensure_list,
         vol.Required(CONF_TOKEN): cv.string,
@@ -66,12 +69,17 @@ PLATFORM_SCHEMA = PLATFORM_SCHEMA.extend(
 )
 
 
-async def async_setup_platform(hass, config, async_add_entities, discovery_info=None):
+async def async_setup_platform(
+    hass: HomeAssistant,
+    config: ConfigType,
+    async_add_entities: AddEntitiesCallback,
+    discovery_info: DiscoveryInfoType | None = None,
+) -> None:
     """Set up the requested World Air Quality Index locations."""
 
-    token = config.get(CONF_TOKEN)
+    token = config[CONF_TOKEN]
     station_filter = config.get(CONF_STATIONS)
-    locations = config.get(CONF_LOCATIONS)
+    locations = config[CONF_LOCATIONS]
 
     client = WaqiClient(token, async_get_clientsession(hass), timeout=TIMEOUT)
     dev = []
@@ -81,15 +89,11 @@ async def async_setup_platform(hass, config, async_add_entities, discovery_info=
             _LOGGER.debug("The following stations were returned: %s", stations)
             for station in stations:
                 waqi_sensor = WaqiSensor(client, station)
-                if (
-                    not station_filter
-                    or {
-                        waqi_sensor.uid,
-                        waqi_sensor.url,
-                        waqi_sensor.station_name,
-                    }
-                    & set(station_filter)
-                ):
+                if not station_filter or {
+                    waqi_sensor.uid,
+                    waqi_sensor.url,
+                    waqi_sensor.station_name,
+                } & set(station_filter):
                     dev.append(waqi_sensor)
     except (
         aiohttp.client_exceptions.ClientConnectorError,
@@ -104,7 +108,6 @@ class WaqiSensor(SensorEntity):
     """Implementation of a WAQI sensor."""
 
     _attr_icon = ATTR_ICON
-    _attr_native_unit_of_measurement = ATTR_UNIT
     _attr_device_class = SensorDeviceClass.AQI
     _attr_state_class = SensorStateClass.MEASUREMENT
 
@@ -177,7 +180,7 @@ class WaqiSensor(SensorEntity):
             except (IndexError, KeyError):
                 return {ATTR_ATTRIBUTION: ATTRIBUTION}
 
-    async def async_update(self):
+    async def async_update(self) -> None:
         """Get the latest data and updates the states."""
         if self.uid:
             result = await self._client.get_station_by_number(self.uid)

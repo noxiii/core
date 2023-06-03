@@ -1,20 +1,27 @@
 """Doorsensor Support for the Nuki Lock."""
+from __future__ import annotations
 
-from pynuki import STATE_DOORSENSOR_OPENED
+from pynuki.constants import STATE_DOORSENSOR_OPENED
+from pynuki.device import NukiDevice
 
 from homeassistant.components.binary_sensor import (
     BinarySensorDeviceClass,
     BinarySensorEntity,
 )
+from homeassistant.config_entries import ConfigEntry
+from homeassistant.core import HomeAssistant
+from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
-from . import NukiEntity
+from . import NukiCoordinator, NukiEntity
 from .const import ATTR_NUKI_ID, DATA_COORDINATOR, DATA_LOCKS, DOMAIN as NUKI_DOMAIN
 
 
-async def async_setup_entry(hass, entry, async_add_entities):
+async def async_setup_entry(
+    hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback
+) -> None:
     """Set up the Nuki lock binary sensor."""
     data = hass.data[NUKI_DOMAIN][entry.entry_id]
-    coordinator = data[DATA_COORDINATOR]
+    coordinator: NukiCoordinator = data[DATA_COORDINATOR]
 
     entities = []
 
@@ -25,15 +32,11 @@ async def async_setup_entry(hass, entry, async_add_entities):
     async_add_entities(entities)
 
 
-class NukiDoorsensorEntity(NukiEntity, BinarySensorEntity):
+class NukiDoorsensorEntity(NukiEntity[NukiDevice], BinarySensorEntity):
     """Representation of a Nuki Lock Doorsensor."""
 
+    _attr_has_entity_name = True
     _attr_device_class = BinarySensorDeviceClass.DOOR
-
-    @property
-    def name(self):
-        """Return the name of the lock."""
-        return self._nuki_device.name
 
     @property
     def unique_id(self) -> str:
@@ -49,7 +52,7 @@ class NukiDoorsensorEntity(NukiEntity, BinarySensorEntity):
         return data
 
     @property
-    def available(self):
+    def available(self) -> bool:
         """Return true if door sensor is present and activated."""
         return super().available and self._nuki_device.is_door_sensor_activated
 

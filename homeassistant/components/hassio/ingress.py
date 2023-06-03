@@ -2,19 +2,23 @@
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Iterable
+from functools import lru_cache
 from ipaddress import ip_address
 import logging
-import os
+from urllib.parse import quote
 
 import aiohttp
 from aiohttp import ClientTimeout, hdrs, web
 from aiohttp.web_exceptions import HTTPBadGateway, HTTPBadRequest
 from multidict import CIMultiDict
+from yarl import URL
 
 from homeassistant.components.http import HomeAssistantView
 from homeassistant.core import HomeAssistant, callback
+from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
-from .const import X_HASSIO, X_INGRESS_PATH
+from .const import X_HASS_SOURCE, X_INGRESS_PATH
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -22,7 +26,7 @@ _LOGGER = logging.getLogger(__name__)
 @callback
 def async_setup_ingress_view(hass: HomeAssistant, host: str):
     """Auth setup."""
-    websession = hass.helpers.aiohttp_client.async_get_clientsession()
+    websession = async_get_clientsession(hass)
 
     hassio_ingress = HassIOIngress(host, websession)
     hass.http.register_view(hassio_ingress)
@@ -40,9 +44,19 @@ class HassIOIngress(HomeAssistantView):
         self._host = host
         self._websession = websession
 
+    @lru_cache
     def _create_url(self, token: str, path: str) -> str:
         """Create URL to service."""
-        return f"http://{self._host}/ingress/{token}/{path}"
+        base_path = f"/ingress/{token}/"
+        url = f"http://{self._host}{base_path}{quote(path)}"
+
+        try:
+            if not URL(url).path.startswith(base_path):
+                raise HTTPBadRequest()
+        except ValueError as err:
+            raise HTTPBadRequest() from err
+
+        return url
 
     async def _handle(
         self, request: web.Request, token: str, path: str
@@ -72,6 +86,7 @@ class HassIOIngress(HomeAssistantView):
         self, request: web.Request, token: str, path: str
     ) -> web.WebSocketResponse:
         """Ingress route for websocket."""
+        req_protocols: Iterable[str]
         if hdrs.SEC_WEBSOCKET_PROTOCOL in request.headers:
             req_protocols = [
                 str(proto.strip())
@@ -104,8 +119,8 @@ class HassIOIngress(HomeAssistantView):
             # Proxy requests
             await asyncio.wait(
                 [
-                    _websocket_forward(ws_server, ws_client),
-                    _websocket_forward(ws_client, ws_server),
+                    asyncio.create_task(_websocket_forward(ws_server, ws_client)),
+                    asyncio.create_task(_websocket_forward(ws_client, ws_server)),
                 ],
                 return_when=asyncio.FIRST_COMPLETED,
             )
@@ -127,6 +142,7 @@ class HassIOIngress(HomeAssistantView):
             allow_redirects=False,
             data=request.content,
             timeout=ClientTimeout(total=None),
+            skip_auto_headers={hdrs.CONTENT_TYPE},
         ) as result:
             headers = _response_header(result)
 
@@ -134,7 +150,7 @@ class HassIOIngress(HomeAssistantView):
             if (
                 hdrs.CONTENT_LENGTH in result.headers
                 and int(result.headers.get(hdrs.CONTENT_LENGTH, 0)) < 4194000
-            ):
+            ) or result.status in (204, 304):
                 # Return Response
                 body = await result.read()
                 return web.Response(
@@ -153,7 +169,11 @@ class HassIOIngress(HomeAssistantView):
                 async for data in result.content.iter_chunked(4096):
                     await response.write(data)
 
-            except (aiohttp.ClientError, aiohttp.ClientPayloadError) as err:
+            except (
+                aiohttp.ClientError,
+                aiohttp.ClientPayloadError,
+                ConnectionResetError,
+            ) as err:
                 _LOGGER.debug("Stream error %s / %s: %s", token, path, err)
 
             return response
@@ -177,14 +197,13 @@ def _init_header(request: web.Request, token: str) -> CIMultiDict | dict[str, st
             continue
         headers[name] = value
 
-    # Inject token / cleanup later on Supervisor
-    headers[X_HASSIO] = os.environ.get("HASSIO_TOKEN", "")
-
     # Ingress information
+    headers[X_HASS_SOURCE] = "core.ingress"
     headers[X_INGRESS_PATH] = f"/api/hassio_ingress/{token}"
 
     # Set X-Forwarded-For
     forward_for = request.headers.get(hdrs.X_FORWARDED_FOR)
+    assert request.transport
     if (peername := request.transport.get_extra_info("peername")) is None:
         _LOGGER.error("Can't set forward_for header, missing peername")
         raise HTTPBadRequest()

@@ -3,6 +3,7 @@ import asyncio
 import logging
 
 from aiohttp import ClientError
+from yalexs.util import get_latest_activity
 
 from homeassistant.core import callback
 from homeassistant.helpers.debounce import Debouncer
@@ -67,7 +68,7 @@ class ActivityStream(AugustSubscriberMixin):
                 self._schedule_updates[house_id] = None
 
     def get_latest_device_activity(self, device_id, activity_types):
-        """Return latest activity that is one of the acitivty_types."""
+        """Return latest activity that is one of the activity_types."""
         if device_id not in self._latest_activities:
             return None
 
@@ -169,12 +170,11 @@ class ActivityStream(AugustSubscriberMixin):
             device_id = activity.device_id
             activity_type = activity.activity_type
             device_activities = self._latest_activities.setdefault(device_id, {})
-            lastest_activity = device_activities.get(activity_type)
-
-            # Ignore activities that are older than the latest one
+            # Ignore activities that are older than the latest one unless it is a non
+            # locking or unlocking activity with the exact same start time.
             if (
-                lastest_activity
-                and lastest_activity.activity_start_time >= activity.activity_start_time
+                get_latest_activity(activity, device_activities.get(activity_type))
+                != activity
             ):
                 continue
 

@@ -44,12 +44,22 @@ purge_entities:
 
     entity_globs:
       name: Entity Globs to remove
-      description: List the regular expressions to select entities for removal from the recorder database.
+      description: List the glob patterns to select entities for removal from the recorder database.
       example: "domain*.object_id*"
       required: false
       default: []
       selector:
         object:
+
+    keep_days:
+      name: Days to keep
+      description: Number of history days to keep in database of matching rows. The default of 0 days will remove all matching rows.
+      default: 0
+      selector:
+        number:
+          min: 0
+          max: 365
+          unit_of_measurement: days
 
 disable:
   name: Disable
